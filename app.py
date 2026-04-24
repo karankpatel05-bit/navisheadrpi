@@ -117,36 +117,53 @@ def get_local_ip() -> str:
         return '127.0.0.1'
 
 # ─────────────────────────────────────────────────────────────
+def _angle_to_dc(angle: float) -> float:
+    """Convert servo angle (0-180°) to PWM duty cycle (2.5-12.5%)."""
+    return 2.5 + (angle / 180.0) * 10.0
+
 def _mouth_animation_loop():
+    """
+    Smoothly animates the servo mouth while speaking.
+    Each cycle (0.5s) sweeps through:  0° → 15° → 60° → 15° → 0°
+    Each keyframe step sleeps for cycle_time / num_steps seconds.
+    """
     global _mouth_thread_running
-    is_open = False
-    
+
+    # Keyframe angles for one open-close mouth cycle
+    KEYFRAMES = [0, 15, 60, 15, 0]
+    CYCLE_TIME = 0.5       # seconds per full open-close cycle
+    STEP_SLEEP = CYCLE_TIME / (len(KEYFRAMES) - 1)   # ~0.125s per step
+
     if not GPIO_AVAILABLE:
         print("[SERVO-SIM] Mouth animation loop started... 🗣️")
-    
+
     while True:
+        for angle in KEYFRAMES:
+            with state_lock:
+                speaking = bot_state.get('speaking', 0)
+            if not speaking:
+                break   # exit keyframe loop
+
+            if GPIO_AVAILABLE:
+                _set_servo(_angle_to_dc(angle))
+            else:
+                print(f"[SERVO-SIM] Mouth angle → {angle}°")
+
+            time.sleep(STEP_SLEEP)
+
+        # Re-check after each full cycle
         with state_lock:
             speaking = bot_state.get('speaking', 0)
-            
         if not speaking:
             break
-            
-        if GPIO_AVAILABLE:
-            if is_open:
-                _set_servo(SERVO_CLOSED_DC)
-            else:
-                _set_servo(SERVO_OPEN_DC)
-                
-        is_open = not is_open
-        time.sleep(0.2)  # Toggle very quickly (0.2s) to match speech
 
-    # Done speaking, close mouth and power off
+    # Done speaking — return mouth to closed (0°) and rest servo
     if GPIO_AVAILABLE:
-        _set_servo(SERVO_CLOSED_DC)
-        time.sleep(0.5)
+        _set_servo(_angle_to_dc(0))
+        time.sleep(0.4)
         with state_lock:
             if bot_state.get('speaking', 0) == 0:
-                _set_servo(0)
+                _set_servo(0)   # Power off to prevent jitter
     else:
         print("[SERVO-SIM] Mouth animation loop stopped. 🤐")
 
