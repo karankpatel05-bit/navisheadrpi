@@ -8,15 +8,6 @@ from difflib import SequenceMatcher
 from dotenv import load_dotenv
 from database import load_training_data, add_qa_pair, delete_qa_pair, init_storage
 
-# ── Optional CV/MediaPipe imports (graceful fallback if not installed) ──
-try:
-    import cv2
-    import mediapipe as mp
-    CV_AVAILABLE = True
-except ImportError:
-    CV_AVAILABLE = False
-    print("⚠️  OpenCV / MediaPipe not installed — vision loop disabled.")
-
 # ── Optional RPi GPIO servo control ───────────────────────────
 try:
     import RPi.GPIO as GPIO
@@ -74,9 +65,8 @@ LANG_INSTRUCTIONS = {
 }
 
 # ── Global Hardware State ──────────────────────────────────────
-# eyes: 1=open, 0=closed  |  speaking: 1=talking, 0=silent
+# speaking: 1=talking, 0=silent
 bot_state = {
-    "eyes": 0,
     "speaking": 0,
 }
 state_lock = threading.Lock()
@@ -142,103 +132,6 @@ def update_hardware():
         # Non-RPi: just log (useful for desktop development/testing)
         action = "OPEN" if speaking else "CLOSED"
         print(f"[SERVO-SIM] Mouth → {action}")
-
-
-# ── Vision Loop (Background Thread) ───────────────────────────
-def _is_eye_open(landmarks, left=True):
-    """
-    Estimates whether an eye is open by measuring the vertical gap between
-    the upper and lower eyelid landmarks, normalized by the eye width.
-    Returns True if open, False if closed.
-
-    Face Mesh landmark indices for:
-      Left eye:  upper=159, lower=145, inner=133, outer=33
-      Right eye: upper=386, lower=374, inner=362, outer=263
-    """
-    if left:
-        upper, lower, inner, outer = 159, 145, 133, 33
-    else:
-        upper, lower, inner, outer = 386, 374, 362, 263
-
-    lm = landmarks.landmark
-    eye_height = abs(lm[upper].y - lm[lower].y)
-    eye_width = abs(lm[inner].x - lm[outer].x)
-    if eye_width == 0:
-        return False
-    ratio = eye_height / eye_width
-    return ratio > 0.20   # Threshold: tune if needed (typical open ~0.25, closed ~0.10)
-
-
-def run_vision_loop():
-    if not CV_AVAILABLE:
-        return
-
-    mp_face = mp.solutions.face_mesh
-    face_mesh = mp_face.FaceMesh(
-        max_num_faces=1,
-        refine_landmarks=True,
-        min_detection_confidence=0.5,
-        min_tracking_confidence=0.5,
-    )
-
-    # Auto-detect working camera with a per-index timeout.
-    cap = None
-    found_index = [None]
-
-    def _probe(idx):
-        try:
-            c = cv2.VideoCapture(idx, cv2.CAP_V4L2)
-            if c.isOpened():
-                ret, _ = c.read()
-                if ret:
-                    found_index[0] = idx
-                c.release()
-        except Exception:
-            pass
-
-    for cam_index in range(4):
-        t = threading.Thread(target=_probe, args=(cam_index,), daemon=True)
-        t.start()
-        t.join(timeout=3)
-        if found_index[0] is not None:
-            cap = cv2.VideoCapture(found_index[0], cv2.CAP_V4L2)
-            print(f"👁️  Vision loop started (camera /dev/video{found_index[0]}).")
-            break
-
-    if cap is None:
-        print("⚠️  Could not open any camera — vision loop disabled.")
-        return
-
-    try:
-        while True:
-            ret, frame = cap.read()
-            if not ret:
-                time.sleep(0.05)
-                continue
-
-            frame = cv2.flip(frame, 1)
-            rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            rgb.flags.writeable = False
-
-            face_result = face_mesh.process(rgb)
-            new_eyes = 0
-            if face_result.multi_face_landmarks:
-                lm = face_result.multi_face_landmarks[0]
-                left_open = _is_eye_open(lm, left=True)
-                right_open = _is_eye_open(lm, left=False)
-                new_eyes = 1 if (left_open or right_open) else 0
-
-            with state_lock:
-                bot_state["eyes"] = new_eyes
-
-            time.sleep(0.02)
-
-    except Exception as e:
-        print(f"⚠️  Vision loop crashed: {e}")
-    finally:
-        cap.release()
-        face_mesh.close()
-        print("👁️  Vision loop exited.")
 
 
 # ── Groq Init ─────────────────────────────────────────────────
@@ -315,7 +208,6 @@ def health():
         'model': MODEL,
         'groq': client is not None,
         'gpio_servo': GPIO_AVAILABLE,
-        'vision': CV_AVAILABLE,
         'bot_state': bot_state,
         'server_ip': get_local_ip(),
     })
@@ -424,7 +316,6 @@ if __name__ == '__main__':
     print(f"   AI Engine : {'✅ Groq (' + MODEL + ')' if client else '❌ No key — set GROQ_API_KEY in .env'}")
     print(f"   Storage   : {storage}")
     print(f"   Servo     : {'✅ GPIO' + str(SERVO_PIN) + ' (BCM) at ' + str(SERVO_FREQ) + ' Hz' if GPIO_AVAILABLE else '⚠️  GPIO not available (non-RPi)'}")
-    print(f"   Vision    : {'✅ OpenCV + MediaPipe' if CV_AVAILABLE else '⚠️  Not available'}")
     if use_ssl:
         print(f"   🔒 HTTPS  : Enabled (microphone will work on mobile)")
     else:
@@ -432,10 +323,6 @@ if __name__ == '__main__':
     print(f"   🌐 Local  : {protocol}://localhost:{port}")
     print(f"   🌐 LAN    : {protocol}://{local_ip}:{port}")
     print(f"   🌐 mDNS   : {protocol}://navisrpi:{port}  (if avahi-daemon is running)\n")
-
-    # Start vision thread
-    vision_thread = threading.Thread(target=run_vision_loop, daemon=True, name="VisionLoop")
-    vision_thread.start()
 
     ssl_ctx = (cert_file, key_file) if use_ssl else None
     try:

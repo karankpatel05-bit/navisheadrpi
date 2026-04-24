@@ -4,9 +4,5 @@ python-dotenv
 gunicorn
 psycopg2-binary
 
-# Camera / eye tracking (optional — comment out if not using vision)
-opencv-python
-mediapipe==0.10.9
-
 # Raspberry Pi GPIO (pre-installed on RPi OS; listed here for reference)
 # RPi.GPIO

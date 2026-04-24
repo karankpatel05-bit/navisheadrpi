@@ -6,7 +6,6 @@ Raspberry Pi–hosted chatbot server for the **Navis** robot head.
 - **Servo mouth** driven **directly from RPi GPIO** — no ESP32 needed  
 - **HTTPS on `navisrpi:5000`** — microphone works on any mobile browser  
 - **Auto IP detection** — server always prints and embeds the current LAN IP  
-- **Eye-tracking** via USB camera + MediaPipe (optional)  
 - **Training panel** — teach Navis custom Q&A pairs (persisted locally or in Supabase)
 
 ---
@@ -33,6 +32,20 @@ journalctl -u navisheadrpi -f
 
 Open **`https://navisrpi:5000`** from any device on the same Wi-Fi.  
 Accept the browser's self-signed certificate warning once.
+
+### Manual Run (for Debugging)
+If you want to run the server locally or debug issues without the background service:
+
+```bash
+# Stop the background service first (if running)
+sudo systemctl stop navisheadrpi
+
+# Activate the virtual environment
+source venv/bin/activate
+
+# Start the Flask app directly
+python app.py
+```
 
 ---
 
@@ -107,7 +120,7 @@ Windows users may need to install [Bonjour](https://support.apple.com/kb/DL999) 
 
 ```
 navisheadrpi/
-├── app.py                # Flask server + servo GPIO + vision loop
+├── app.py                # Flask server + servo GPIO
 ├── database.py           # Training data storage (JSON or PostgreSQL)
 ├── requirements.txt
 ├── .env.example
