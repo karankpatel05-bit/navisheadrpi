@@ -82,8 +82,8 @@ def _init_servo():
     try:
         GPIO.setup(SERVO_PIN, GPIO.OUT)
         _servo_pwm = GPIO.PWM(SERVO_PIN, SERVO_FREQ)
-        _servo_pwm.start(SERVO_CLOSED_DC)
-        print(f"✅  Servo PWM ready on GPIO{SERVO_PIN} (closed at {SERVO_CLOSED_DC}% duty).")
+        _servo_pwm.start(0)  # Start unpowered to prevent initial jitter
+        print(f"✅  Servo PWM ready on GPIO{SERVO_PIN} (idle at 0% duty).")
     except Exception as e:
         print(f"⚠️  Servo init error: {e}")
 
@@ -126,8 +126,19 @@ def update_hardware():
         speaking = bot_state['speaking']
 
     if GPIO_AVAILABLE:
-        dc = SERVO_OPEN_DC if speaking else SERVO_CLOSED_DC
-        _set_servo(dc)
+        if speaking:
+            _set_servo(SERVO_OPEN_DC)
+        else:
+            _set_servo(SERVO_CLOSED_DC)
+            
+            # Wait for servo to physically close, then turn off the PWM to rest it
+            def power_off_servo():
+                time.sleep(0.5)
+                with state_lock:
+                    if bot_state['speaking'] == 0:
+                        _set_servo(0)
+            
+            threading.Thread(target=power_off_servo, daemon=True).start()
     else:
         # Non-RPi: just log (useful for desktop development/testing)
         action = "OPEN" if speaking else "CLOSED"
