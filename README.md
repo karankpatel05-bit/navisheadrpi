@@ -30,7 +30,8 @@ sudo systemctl start navisheadrpi
 journalctl -u navisheadrpi -f
 ```
 
-Open **`https://navisrpi:5000`** from any device on the same Wi-Fi.  
+Open **`https://navisrpi.local:5000`** from any device on the same Wi-Fi.  
+(Alternatively, use the LAN IP shown in the terminal output, e.g., `https://192.168.x.x:5000`).
 Accept the browser's self-signed certificate warning once.
 
 ### Manual Run (for Debugging)

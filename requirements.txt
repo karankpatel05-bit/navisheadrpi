@@ -4,5 +4,5 @@ python-dotenv
 gunicorn
 psycopg2-binary
 
-# Raspberry Pi GPIO (pre-installed on RPi OS; listed here for reference)
-# RPi.GPIO
+# Modern GPIO library compatible with Ubuntu and RPi 4/5
+rpi-lgpio

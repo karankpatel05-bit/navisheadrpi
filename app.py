@@ -322,7 +322,7 @@ if __name__ == '__main__':
         print(f"   ⚠️  No SSL certs — run with HTTPS for mobile mic access")
     print(f"   🌐 Local  : {protocol}://localhost:{port}")
     print(f"   🌐 LAN    : {protocol}://{local_ip}:{port}")
-    print(f"   🌐 mDNS   : {protocol}://navisrpi:{port}  (if avahi-daemon is running)\n")
+    print(f"   🌐 mDNS   : {protocol}://navisrpi.local:{port}  (if avahi-daemon is running)\n")
 
     ssl_ctx = (cert_file, key_file) if use_ssl else None
     try:
