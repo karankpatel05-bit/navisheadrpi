@@ -70,6 +70,7 @@ bot_state = {
     "speaking": 0,
 }
 state_lock = threading.Lock()
+_mouth_thread_running = False
 
 # ── Servo PWM handle ───────────────────────────────────────────
 _servo_pwm = None
@@ -116,33 +117,55 @@ def get_local_ip() -> str:
         return '127.0.0.1'
 
 # ─────────────────────────────────────────────────────────────
+def _mouth_animation_loop():
+    global _mouth_thread_running
+    is_open = False
+    
+    if not GPIO_AVAILABLE:
+        print("[SERVO-SIM] Mouth animation loop started... 🗣️")
+    
+    while True:
+        with state_lock:
+            speaking = bot_state.get('speaking', 0)
+            
+        if not speaking:
+            break
+            
+        if GPIO_AVAILABLE:
+            if is_open:
+                _set_servo(SERVO_CLOSED_DC)
+            else:
+                _set_servo(SERVO_OPEN_DC)
+                
+        is_open = not is_open
+        time.sleep(0.2)  # Toggle very quickly (0.2s) to match speech
+
+    # Done speaking, close mouth and power off
+    if GPIO_AVAILABLE:
+        _set_servo(SERVO_CLOSED_DC)
+        time.sleep(0.5)
+        with state_lock:
+            if bot_state.get('speaking', 0) == 0:
+                _set_servo(0)
+    else:
+        print("[SERVO-SIM] Mouth animation loop stopped. 🤐")
+
+    with state_lock:
+        _mouth_thread_running = False
+
 def update_hardware():
     """
     Reads the current bot_state and drives the GPIO servo accordingly.
-    Speaking = 1  → move servo to OPEN position
-    Speaking = 0  → move servo to CLOSED position
+    Speaking = 1  → starts a loop to continuously open and close the mouth
+    Speaking = 0  → loop exits, servo closes and rests
     """
+    global _mouth_thread_running
+    
     with state_lock:
         speaking = bot_state['speaking']
-
-    if GPIO_AVAILABLE:
-        if speaking:
-            _set_servo(SERVO_OPEN_DC)
-        else:
-            _set_servo(SERVO_CLOSED_DC)
-            
-            # Wait for servo to physically close, then turn off the PWM to rest it
-            def power_off_servo():
-                time.sleep(0.5)
-                with state_lock:
-                    if bot_state['speaking'] == 0:
-                        _set_servo(0)
-            
-            threading.Thread(target=power_off_servo, daemon=True).start()
-    else:
-        # Non-RPi: just log (useful for desktop development/testing)
-        action = "OPEN" if speaking else "CLOSED"
-        print(f"[SERVO-SIM] Mouth → {action}")
+        if speaking and not _mouth_thread_running:
+            _mouth_thread_running = True
+            threading.Thread(target=_mouth_animation_loop, daemon=True).start()
 
 
 # ── Groq Init ─────────────────────────────────────────────────
@@ -267,7 +290,7 @@ def mouth():
 
     update_hardware()
 
-    action = "OPEN (speaking)" if state else "CLOSE (silent)"
+    action = "START ANIMATION (speaking)" if state else "STOP ANIMATION (silent)"
     print(f"[MOUTH] State: {state}  → Servo {action}")
     return jsonify({'success': True, 'speaking': state, 'bot_state': bot_state})
 
